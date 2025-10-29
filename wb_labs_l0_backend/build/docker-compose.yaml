@@ -1,0 +1,63 @@
+volumes:
+  postgres_data:
+  nats_data:
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: wb_labs_l0_backend-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: wb_labs_l0
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nats-streaming:
+    image: nats-streaming:0.23.0
+    container_name: wb_labs_l0_backend-nats-streaming
+    environment:
+      - NATS_CLUSTER_ID=test-cluster
+      - NATS_CLIENT_ID=nats-client
+      - NATS_URL=nats://nats-streaming:4222
+    ports:
+      - "4222:4222"
+
+  backend:
+    build:
+      context: ..
+      dockerfile: ./Dockerfile
+    container_name: wb_labs_l0_backend-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats-streaming:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/wb_labs_l0?sslmode=disable
+      HTTP_PORT: ":8080"
+      STAN_CLUSTER_ID: test-cluster
+      STAN_CLIENT_ID: wb_labs_l0_backend
+      STAN_URL: nats://nats-streaming:4222
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: wb_labs_l0_backend-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
