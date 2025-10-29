@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: orders
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orders -d orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  nats:
+    image: nats-streaming:0.25-alpine
+    command: "-store file -dir /data -m 8222 -cid test-cluster"
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - natsdata:/data
+
+  backend:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      DB_DSN: "postgres://orders:orders@postgres:5432/orders?sslmode=disable"
+      NATS_URL: "nats://nats:4222"
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  natsdata:

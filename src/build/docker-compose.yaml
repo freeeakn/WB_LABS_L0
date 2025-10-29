@@ -1,0 +1,65 @@
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DB_DSN: "postgres://orders:orders@postgres:5432/orders?sslmode=disable"
+      NATS_URL: "nats://nats:4222"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: orders
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orders -d orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  nats:
+    image: nats-streaming:0.25-alpine
+    command: "-store file -dir /data -m 8222 -cid test-cluster"
+    volumes:
+      - natsdata:/data
+
+  publisher:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    depends_on:
+      nats:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    entrypoint: ["/publish", "/app/model.json"]
+    restart: "no"
+
+volumes:
+  pgdata:
+  natsdata:
